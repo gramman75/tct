@@ -175,3 +175,47 @@ VI. 결론 및 실행 계획
  * 온톨로지/지식 그래프: $\text{KM_CATEGORY}$는 기본적인 계층 구조(Taxonomy)만 담당합니다. 지식 간의 복잡한 의미론적 관계 및 추론이 필요한 온톨로지 인스턴스는 $\text{KNOW_ID}$를 노드 $\text{ID}$로 사용하여 **별도의 그래프 데이터베이스(Graph DB)**에 저장 및 관리하는 것이 성능상 효율적입니다.[1]
  * 성능 최적화: \text{KM\_ACTIVITY}$와 같이 데이터가 폭증할 수 있는 테이블은 $\text{DATETIME}$ 기준으로 **파티셔닝**을 고려해야 하며, 모든 $\text{FK}$ 및 자주 사용되는 검색 조건($\text{STATUS}, \text{ACT\_DT})에는 인덱스를 설정해야 합니다.
 
+
+
+
+지식관리포털(KMS)에 **그래프 데이터베이스(Graph DB)**를 적용하는 것은 단순한 데이터 저장 방식을 넘어, 지식의 활용 능력을 지능화하는 핵심 전략입니다. Graph DB는 지식 간의 복잡한 연결 관계를 효율적으로 모델링하고 저장하여, 사용자가 원하는 정보를 맥락적으로 찾아내고 새로운 통찰력을 도출할 수 있는 기반을 제공합니다. [1]
+Graph DB는 주로 지식 표현 계층(Knowledge Representation Layer) [2]을 구축하는 데 활용되며, 온톨로지(Ontology) 기반의 지식 모델을 구현하는 데 핵심적인 역할을 수행합니다. [1]
+다음은 Graph DB 적용 시의 설계 목표, 모델링 전략, 그리고 RDBMS와의 통합 방안입니다.
+1. Graph DB 적용의 주요 목표 및 이점
+KMS에 Graph DB를 적용하는 주된 목표는 지식의 검색 및 추천을 시맨틱(Semantic) 수준으로 고도화하는 것입니다.
+| 목표 영역 | Graph DB의 이점 | 연관 설계 요소 |
+|---|---|---|
+| 복잡한 관계 모델링 | 지식, 사람, 프로젝트, 개념 간의 다대다 관계를 \text{JOIN} 없이 효율적으로 탐색합니다. [3] | 온톨로지 인스턴스 (노드: 지식, 전문가, 관계: \text{REQUIRES}, \text{RELATED\_TO}, \text{AUTHORED\_BY}) |
+| 시맨틱 검색 (Semantic Search) | 단순 키워드 매칭을 넘어 지식의 **문맥(Context)**을 이해하여 검색 질의를 확장하고, 숨겨진 지식을 찾아냅니다. [2] | 온톨로지 기반 질의 확장, 추론기 (Reasoner)를 통한 새로운 지식 도출. [3] |
+| 개인화된 추천 | 사용자(\text{Node})가 소비한 지식(\text{Node})과 연결된 다른 지식 또는 전문가를 빠르고 정확하게 추천합니다. | 활동 로그(\text{KM\_ACTIVITY} 데이터)를 Graph DB로 변환하여 협업 필터링 구현. |
+| 암묵지 발굴 | '특정 분야의 전문가'와 '그 전문가가 작성한 지식', '그 지식을 활용한 프로젝트' 간의 연결 고리를 분석하여 전문가 네트워크를 시각화합니다. | 전문가 네트워크 관리 및 Q&A 답변자 추천 시스템. |
+2. Graph DB 핵심 모델링 전략 (지식 그래프)
+Graph DB는 노드(Node)와 엣지(Edge/Relationship)로 구성된 **지식 그래프(Knowledge Graph, KG)**를 구현합니다. [3]
+2.1. 노드 (Nodes, 개체/Entity) 설계
+노드는 KMS 내에서 중요하게 취급되는 개체(실체)를 나타내며, RDBMS의 주요 엔티티를 참조합니다.
+| 노드 유형 (Label) | 역할 및 설명 | 연결 RDBMS 테이블 |
+|---|---|---|
+| \text{KNOWLEDGE} | 형식지 콘텐츠 자체 | \text{KM\_KNOWLEDGE} (\text{KNOW\_ID}) |
+| \text{USER} | 작성자, 소비자, 전문가 등 사용자 | \text{KM\_USER} (\text{USER\_ID}) |
+| \text{CONCEPT} | 온톨로지에서 정의된 핵심 비즈니스 개념 또는 용어 | \text{KM\_TAG} 또는 별도의 \text{KM\_ONTOLOGY} 테이블 |
+| \text{PROJECT} | 특정 지식이 사용된 프로젝트 | \text{외부 시스템} (\text{PROJECT\_ID}) |
+2.2. 엣지 (Edges, 관계/Relationship) 설계
+엣지는 노드와 노드 사이의 관계를 정의합니다. 이를 통해 지식 간의 추론이 가능해집니다.
+| 엣지 유형 (Type) | 시작 노드 | 끝 노드 | 설명 |
+|---|---|---|---|
+| \text{AUTHORED\_BY} | \text{KNOWLEDGE} | \text{USER} | 지식의 작성자 |
+| \text{RELATED\_TO} | \text{KNOWLEDGE} | \text{KNOWLEDGE} | 의미론적 연관성 (시맨틱 유사도 분석 결과) |
+| \text{CONSUMED\_BY} | \text{KNOWLEDGE} | \text{USER} | 지식 조회 활동 (협업 필터링 기본 데이터) |
+| \text{APPLIES\_TO} | \text{KNOWLEDGE} | \text{PROJECT} | 특정 프로젝트에 적용된 지식 |
+| \text{IS\_A} | \text{CONCEPT} | \text{CONCEPT} | 상/하위 개념 관계 (온톨로지 계층 구조) [1] |
+| \text{REQUIRES} | \text{KNOWLEDGE} | \text{KNOWLEDGE} | 선행 지식 필수 조건 |
+3. RDBMS와의 통합 및 연동 방안
+Graph DB는 RDBMS를 완전히 대체하는 것이 아니라, RDBMS가 처리하기 어려운 관계 중심의 데이터 처리를 전담하는 형태의 하이브리드 아키텍처로 운영되어야 합니다. [4, 5]
+ * 데이터 동기화:
+   * \text{KM\_KNOWLEDGE}, \text{KM\_USER} 테이블에 새로운 레코드가 생성되면, 해당 레코드의 $\text{ID}$를 $\text{Node ID}$로 사용하여 Graph DB에 즉시 동기화합니다.
+   * 이때 Apache Kafka와 같은 실시간 스트리밍 플랫폼을 활용하여 데이터의 변경 사항을 Graph DB에 비동기적으로 전달하여 시스템 간의 부하를 분리할 수 있습니다. [6]
+ * 질의 처리 흐름:
+   * 정형 검색: 사용자가 제목이나 카테고리(\text{KM\_CATEGORY})를 통한 단순 검색 시에는 RDBMS 또는 전문 검색 엔진이 처리합니다.
+   * 시맨틱/관계 기반 검색: "이 프로젝트와 관련된 다른 전문가가 작성한 지식은?" 또는 "이 지식(\text{KNOW\_ID})과 의미적으로 연관된 다른 지식은?"과 같은 복잡한 관계 질의는 Graph DB에서 처리됩니다. Graph DB는 결과를 RDBMS \text{ID} 목록 형태로 반환하고, RDBMS가 최종 메타데이터를 사용자에게 표시합니다.
+이러한 Graph DB의 적용은 지식관리 시스템이 단순 저장소 기능을 넘어, **지식의 구조(Ontology)**를 기반으로 새로운 통찰력(Insight)을 도출하는 지능형 시스템으로 발전하는 핵심적인 기반이 됩니다. [3, 7]
+
